@@ -22,10 +22,14 @@ classifiers = [
 # version the CI matrix has passed against; raise it only together
 # with the matrix and the README.
 fastapi = ["fastapi>=0.100,<0.142"]
+pytest = ["pytest>=8"]
 test = ["pytest>=8", "fastapi>=0.100,<0.142"]
 
 [project.scripts]
 scope-parity = "scope_parity.cli:main"
+
+[project.entry-points.pytest11]
+scope_parity = "scope_parity.pytest_plugin"
 
 [tool.setuptools.packages.find]
 where = ["src"]
