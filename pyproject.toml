@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scope-parity"
-version = "0.1.0"
+dynamic = ["version"]
 description = "parity checks between a route registry and a permission registry"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,8 +19,14 @@ classifiers = [
 [project.optional-dependencies]
 test = ["pytest"]
 
+[project.scripts]
+scope-parity = "scope_parity.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "scope_parity.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

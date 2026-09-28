@@ -5,6 +5,8 @@ Finding objects describing the mismatches. It never prints; rendering
 is left to callers.
 """
 
+__version__ = "0.2.0"
+
 from scope_parity.checks import (
     EXEMPTION_MISSING_REASON,
     ROUTE_UNKNOWN_SCOPE,
@@ -29,6 +31,7 @@ __all__ = [
     "Route",
     "Scope",
     "Severity",
+    "__version__",
     "check_exemptions",
     "check_unknown_scopes",
     "check_unprotected_routes",
