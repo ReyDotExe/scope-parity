@@ -9,6 +9,19 @@ check looks exactly like working code. scope-parity takes the list of
 routes and the list of scopes and reports the mismatches, so CI fails
 instead of a human noticing.
 
+## install
+
+not on pypi yet. clone the repository and install it into your
+environment:
+
+```
+git clone https://github.com/ReyDotExe/scope-parity.git
+cd scope-parity
+pip install -e .
+```
+
+python 3.11 or newer. no runtime dependencies.
+
 ## the checks
 
 - route-unprotected (error): a route declares no scope and is not
@@ -60,11 +73,68 @@ finding has a machine-readable code, a severity, the subject it
 concerns, and a message. fail your build if any finding has severity
 error, or on any finding at all if you prefer.
 
+## the cli
+
+point scope-parity at the module that holds your registry:
+
+```
+scope-parity myapp.scopes:registry
+```
+
+the part after the colon is an attribute name and defaults to
+registry, so `scope-parity myapp.scopes` means the same thing. the
+attribute must be a Registry, or a zero-argument callable that
+returns one. the current directory goes on sys.path first, so the
+command works from a repo root without installing your application.
+instead of an argument, the target can live in pyproject.toml:
+
+```toml
+[tool.scope-parity]
+target = "myapp.scopes:registry"
+```
+
+what a run with findings prints:
+
+```
+error    route-unprotected    DELETE /orders/{id} (delete_order) declares no scope and is not marked public
+error    route-unknown-scope  GET /invoices (list_invoices) declares scope 'billing:view', which is not in the scope registry
+warning  scope-unused         scope 'billing:read' is not declared by any route and is not marked routeless
+
+4 routes and 3 scopes checked: 2 errors, 1 warning
+```
+
+errors sort before warnings, and the summary line prints on clean
+runs too, so a step that produced no output is never confused with
+one that did not run. severities are coloured when stdout is a
+terminal, never when piped or redirected, and NO_COLOR is honored.
+
+the flags:
+
+- --fail-on {error,warning,never}: the lowest severity that makes
+  the run exit 1. error is the default; warnings print but do not
+  fail. warning fails on any finding. never reports without failing.
+- --format {human,json}: json prints one document with every finding
+  (code, severity, subject, message) and the summary counts, for CI
+  to consume.
+- --version.
+
+the exit codes:
+
+- 0: the checks ran and no finding met the failing severity.
+- 1: the checks ran and at least one finding met it.
+- 2: the run could not be performed. bad arguments, a target that
+  did not import, an attribute that is missing or not a Registry, or
+  a registry with no routes. an import error is not a clean run, and
+  neither is an empty registry: a run that checked nothing must not
+  look like a pass.
+
 ## status
 
-this is stage 1: the data model and the checks. there is no CLI, no
-framework adapter, and no pytest plugin yet. the core imports nothing
-outside the standard library. pytest is the only test dependency.
+this is stage 2: the data model, the checks, and the CLI. there is
+no framework adapter, no pytest plugin, and no canned CI config yet.
+the core imports nothing outside the standard library, and the CLI
+adds only argparse and tomllib from it. pytest is the only test
+dependency.
 
 ## license
 
