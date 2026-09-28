@@ -5,6 +5,33 @@ Finding objects describing the mismatches. It never prints; rendering
 is left to callers.
 """
 
+from scope_parity.checks import (
+    EXEMPTION_MISSING_REASON,
+    ROUTE_UNKNOWN_SCOPE,
+    ROUTE_UNPROTECTED,
+    SCOPE_UNUSED,
+    check_exemptions,
+    check_unknown_scopes,
+    check_unprotected_routes,
+    check_unused_scopes,
+    run_checks,
+)
 from scope_parity.model import Exemption, Finding, Registry, Route, Scope, Severity
 
-__all__ = ["Exemption", "Finding", "Registry", "Route", "Scope", "Severity"]
+__all__ = [
+    "EXEMPTION_MISSING_REASON",
+    "ROUTE_UNKNOWN_SCOPE",
+    "ROUTE_UNPROTECTED",
+    "SCOPE_UNUSED",
+    "Exemption",
+    "Finding",
+    "Registry",
+    "Route",
+    "Scope",
+    "Severity",
+    "check_exemptions",
+    "check_unknown_scopes",
+    "check_unprotected_routes",
+    "check_unused_scopes",
+    "run_checks",
+]
