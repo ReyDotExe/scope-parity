@@ -128,13 +128,77 @@ the exit codes:
   neither is an empty registry: a run that checked nothing must not
   look like a pass.
 
+## the fastapi adapter
+
+hand-writing a registry that mirrors your real routes is itself a
+defect waiting to happen: the mirror drifts from the app, and a
+checker reading a stale mirror reports a clean run on an app that
+changed. the adapter removes the duplication by reading the routes
+from the live app object. the scope registry stays hand-written,
+because it is the source of truth the app is checked against;
+inferring it from what the routes declare would leave scope-unused
+and route-unknown-scope with nothing to catch.
+
+install the extra:
+
+```
+pip install -e ".[fastapi]"
+```
+
+write a small module that builds the registry from your app, and
+point the CLI at it:
+
+```python
+from scope_parity import Scope
+from scope_parity.fastapi import from_fastapi
+
+from myapp.main import app
+
+registry = from_fastapi(app, scopes=[
+    Scope("orders:read", "view orders"),
+    Scope("orders:write", "create and edit orders"),
+])
+```
+
+```
+scope-parity myapp.parity:registry
+```
+
+the adapter reads scopes from the same security dependency tree
+fastapi's openapi generator reads: Security(scheme, scopes=[...])
+declared as a parameter, in a route's dependencies, or in a router's
+dependencies, which apply to everything mounted under the router,
+included sub-routers too. two markers cover apps that authorize some
+other way: @declares("orders:read") on an endpoint adds scopes, and
+@public("reason") marks it deliberately public and becomes the
+route's exemption. plain Depends() is not treated as authorization:
+the adapter cannot tell a database session from a hand-rolled auth
+check, so a route whose only protection is a plain dependency needs
+a marker.
+
+a route the adapter cannot classify, one that carries a security
+scheme but declares no scope anywhere, is neither reported as
+unprotected nor waved through. from_fastapi raises instead, naming
+every such route and how to resolve it, and through the CLI that is
+exit code 2: the run could not be performed. this is the same
+distinction the empty-registry exit code draws.
+
+routes that are not fastapi api routes, such as the documentation
+routes and starlette mounts, are outside the adapter and skipped.
+
+## trust boundary
+
+scope-parity imports your application to read its routes, so it runs
+module-level code. it is for code you trust, the same as a test
+suite. it is not a scanner for untrusted input.
+
 ## status
 
-this is stage 2: the data model, the checks, and the CLI. there is
-no framework adapter, no pytest plugin, and no canned CI config yet.
-the core imports nothing outside the standard library, and the CLI
-adds only argparse and tomllib from it. pytest is the only test
-dependency.
+this is stage 3: the data model, the checks, the CLI, and a fastapi
+adapter. the pytest plugin and canned CI config are still not built.
+the core imports nothing outside the standard library; fastapi is an
+optional extra used only by the adapter. pytest and fastapi are the
+test dependencies.
 
 ## license
 
