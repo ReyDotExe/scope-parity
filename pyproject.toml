@@ -14,11 +14,15 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 [project.optional-dependencies]
-fastapi = ["fastapi>=0.100"]
-test = ["pytest", "fastapi>=0.100"]
+# The adapter reads FastAPI internals, so the upper bound is the last
+# version the CI matrix has passed against; raise it only together
+# with the matrix and the README.
+fastapi = ["fastapi>=0.100,<0.142"]
+test = ["pytest>=8", "fastapi>=0.100,<0.142"]
 
 [project.scripts]
 scope-parity = "scope_parity.cli:main"
