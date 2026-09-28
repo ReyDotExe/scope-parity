@@ -1,0 +1,93 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: tests (python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install with test dependencies
+        run: python -m pip install -e ".[test]"
+      - name: Run the test suite
+        run: python -m pytest
+
+  fastapi-matrix:
+    # The adapter reads FastAPI internals, so every version in the
+    # claimed range boundary set is tested: the lower bound, points
+    # between, both sides of the 0.141 dependant/router refactor, and
+    # the newest release the range admits. Widening the range in
+    # pyproject means adding the new version here first.
+    name: fastapi ${{ matrix.fastapi }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        fastapi:
+          - "0.100.1"
+          - "0.109.2"
+          - "0.115.14"
+          - "0.128.8"
+          - "0.140.13"
+          - "0.141.0"
+          - "0.141.1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install with a pinned FastAPI
+        run: |
+          python -m pip install -e ".[test]"
+          python -m pip install "fastapi==${{ matrix.fastapi }}"
+      - name: Run the test suite against this FastAPI
+        run: python -m pytest
+
+  self-check:
+    # Exercise scope-parity as a tool, core install only: the CLI must
+    # pass the clean demo registry, fail the dirty one with exit code
+    # 1 and not something else, and refuse a bad target with exit code
+    # 2. A build that stops reporting cannot pass its own pipeline.
+    name: self-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the core only
+        run: python -m pip install -e .
+      - name: Clean registry exits 0
+        run: scope-parity examples.demo_registry
+      - name: Dirty registry exits 1
+        run: |
+          set +e
+          scope-parity examples.demo_dirty
+          code=$?
+          set -e
+          test "$code" -eq 1
+      - name: Dirty registry with --fail-on never exits 0
+        run: scope-parity examples.demo_dirty --fail-on never
+      - name: Missing target exits 2
+        run: |
+          set +e
+          scope-parity examples.no_such_module
+          code=$?
+          set -e
+          test "$code" -eq 2
+      - name: JSON output parses and counts match
+        run: |
+          scope-parity examples.demo_dirty --format json --fail-on never \
+            | python -c "import json, sys; d = json.load(sys.stdin); \
+          assert d['summary']['errors'] == 2 and d['summary']['warnings'] == 1, d"

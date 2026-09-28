@@ -40,3 +40,9 @@ version = {attr = "scope_parity.__version__"}
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+# scope-parity checks its own demo registry: the CLI target for the
+# self-check CI job, and the pytest plugin's collected test.
+[tool.scope-parity]
+target = "examples.demo_registry"
+pytest = true
