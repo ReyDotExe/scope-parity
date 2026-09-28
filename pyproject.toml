@@ -17,7 +17,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+fastapi = ["fastapi>=0.100"]
+test = ["pytest", "fastapi>=0.100"]
 
 [project.scripts]
 scope-parity = "scope_parity.cli:main"

@@ -5,7 +5,7 @@ Finding objects describing the mismatches. It never prints; rendering
 is left to callers.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from scope_parity.checks import (
     EXEMPTION_MISSING_REASON,
