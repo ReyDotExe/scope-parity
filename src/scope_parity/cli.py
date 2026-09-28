@@ -18,10 +18,11 @@ import json
 import os
 import sys
 from collections.abc import Sequence
+from contextlib import AbstractContextManager, nullcontext
 from typing import TextIO
 
 from scope_parity import __version__
-from scope_parity.checks import run_checks
+from scope_parity.checks import ROUTE_UNCLASSIFIABLE, run_checks
 from scope_parity.model import Finding, Registry, Severity
 
 __all__ = ["EXIT_CLEAN", "EXIT_FINDINGS", "EXIT_TOOL_FAILURE", "load_registry", "main"]
@@ -131,9 +132,14 @@ _RESET = "\x1b[0m"
 
 
 def _render_human(
-    findings: list[Finding], registry: Registry, stream: TextIO
+    findings: list[Finding], registry: Registry, stream: TextIO, triage: bool = False
 ) -> None:
-    """Print one finding per line, errors first, then a summary line."""
+    """Print one finding per line, errors first, then a summary line.
+
+    The unclassifiable count is appended to the summary whenever it is
+    nonzero, and also at zero when triage mode is on, so a run in
+    triage mode always says so.
+    """
     color = _use_color(stream)
     ordered = sorted(findings, key=lambda f: 0 if f.severity is Severity.ERROR else 1)
     code_width = max((len(f.code) for f in ordered), default=0)
@@ -144,12 +150,15 @@ def _render_human(
         print(f"{severity}  {finding.code:<{code_width}}  {finding.message}", file=stream)
     errors = sum(1 for f in findings if f.severity is Severity.ERROR)
     warnings = sum(1 for f in findings if f.severity is Severity.WARNING)
+    unclassifiable = sum(1 for f in findings if f.code == ROUTE_UNCLASSIFIABLE)
     if findings:
         print(file=stream)
     counts = "no findings" if not findings else (
         f"{errors} error{'s' if errors != 1 else ''}, "
         f"{warnings} warning{'s' if warnings != 1 else ''}"
     )
+    if unclassifiable or triage:
+        counts += f", {unclassifiable} unclassifiable"
     print(
         f"{len(registry.routes)} routes and {len(registry.scopes)} scopes "
         f"checked: {counts}",
@@ -174,6 +183,9 @@ def _render_json(
         "summary": {
             "errors": sum(1 for f in findings if f.severity is Severity.ERROR),
             "warnings": sum(1 for f in findings if f.severity is Severity.WARNING),
+            "unclassifiable": sum(
+                1 for f in findings if f.code == ROUTE_UNCLASSIFIABLE
+            ),
             "routes": len(registry.routes),
             "scopes": len(registry.scopes),
         },
@@ -218,6 +230,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="output format (default: human)",
     )
     parser.add_argument(
+        "--triage-unclassifiable",
+        action="store_true",
+        help="report routes the FastAPI adapter cannot classify as "
+        "route-unclassifiable errors instead of failing the run with "
+        "exit code 2; requires the fastapi extra",
+    )
+    parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
     return parser
@@ -232,6 +251,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
 
+    load_context: AbstractContextManager[None] = nullcontext()
+    if args.triage_unclassifiable:
+        try:
+            from scope_parity.fastapi import triage_unclassifiable
+        except ImportError:
+            print(
+                "scope-parity: error: --triage-unclassifiable requires the "
+                'fastapi extra; install it with: pip install "scope-parity[fastapi]"',
+                file=sys.stderr,
+            )
+            return EXIT_TOOL_FAILURE
+        load_context = triage_unclassifiable()
+
     try:
         target = args.target
         if target is None:
@@ -244,7 +276,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return EXIT_TOOL_FAILURE
-        registry = load_registry(target)
+        with load_context:
+            registry = load_registry(target)
     except TargetError as exc:
         print(f"scope-parity: error: {exc}", file=sys.stderr)
         return EXIT_TOOL_FAILURE
@@ -261,7 +294,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.format == "json":
         _render_json(findings, registry, sys.stdout)
     else:
-        _render_human(findings, registry, sys.stdout)
+        _render_human(
+            findings, registry, sys.stdout, triage=args.triage_unclassifiable
+        )
     return EXIT_FINDINGS if _should_fail(findings, args.fail_on) else EXIT_CLEAN
 
 

@@ -17,9 +17,12 @@ A route that carries a security scheme but declares no scope at all
 cannot be classified: it is authenticated, so reporting it as
 unprotected would be a false positive, but the adapter cannot name
 what it requires either. from_fastapi raises UnclassifiableRouteError
-for those instead of guessing. Plain Depends() dependencies are not
-treated as authorization; a route whose only protection is a plain
-dependency needs a marker.
+for those instead of guessing. In triage mode, selected with
+on_unclassifiable="finding" or the triage_unclassifiable() context
+manager, such routes become route-unclassifiable findings instead, so
+an existing app can be adopted incrementally with a full report.
+Plain Depends() dependencies are not treated as authorization; a
+route whose only protection is a plain dependency needs a marker.
 
 This module requires the fastapi extra: pip install "scope-parity[fastapi]".
 """
@@ -27,8 +30,10 @@ This module requires the fastapi extra: pip install "scope-parity[fastapi]".
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Iterable
-from typing import Any, TypeVar
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Literal, TypeVar
 
 try:
     from fastapi import FastAPI
@@ -51,11 +56,39 @@ except ImportError:  # older fastapi flattens included routers itself
 
 from scope_parity.model import Exemption, Registry, Route, Scope
 
-__all__ = ["UnclassifiableRouteError", "declares", "from_fastapi", "public"]
+__all__ = [
+    "UnclassifiableRouteError",
+    "declares",
+    "from_fastapi",
+    "public",
+    "triage_unclassifiable",
+]
 
 _MARKER_ATTR = "__scope_parity__"
 
 _F = TypeVar("_F", bound=Callable[..., object])
+
+OnUnclassifiable = Literal["raise", "finding"]
+
+_DEFAULT_ON_UNCLASSIFIABLE: ContextVar[OnUnclassifiable] = ContextVar(
+    "scope_parity_on_unclassifiable", default="raise"
+)
+
+
+@contextmanager
+def triage_unclassifiable() -> Iterator[None]:
+    """Make from_fastapi default to on_unclassifiable="finding" inside the block.
+
+    This is how the CLI's --triage-unclassifiable flag reaches an
+    adapter call inside the module it imports, without that module
+    changing. An explicit on_unclassifiable argument always wins over
+    this default.
+    """
+    token = _DEFAULT_ON_UNCLASSIFIABLE.set("finding")
+    try:
+        yield
+    finally:
+        _DEFAULT_ON_UNCLASSIFIABLE.reset(token)
 
 
 class UnclassifiableRouteError(Exception):
@@ -202,7 +235,11 @@ def _iter_api_routes(app: FastAPI) -> Iterable[tuple[str, str, set[str], Any, An
                 )
 
 
-def from_fastapi(app: FastAPI, scopes: Iterable[Scope]) -> Registry:
+def from_fastapi(
+    app: FastAPI,
+    scopes: Iterable[Scope],
+    on_unclassifiable: OnUnclassifiable | None = None,
+) -> Registry:
     """Build a Registry whose routes are the app's actual routes.
 
     scopes is the hand-written scope registry the app is checked
@@ -211,10 +248,22 @@ def from_fastapi(app: FastAPI, scopes: Iterable[Scope]) -> Registry:
     the documentation routes and mounts are outside the adapter and
     skipped.
 
-    Raises UnclassifiableRouteError if any route carries a security
-    scheme but declares no scope, rather than reporting it as
-    unprotected or protected.
+    on_unclassifiable decides what happens to a route that carries a
+    security scheme but declares no scope. "raise" (the default)
+    raises UnclassifiableRouteError naming every such route, rather
+    than reporting it as unprotected or protected. "finding" is triage
+    mode: each such route enters the registry marked unclassifiable,
+    and run_checks reports it as a route-unclassifiable error. None
+    means the ambient default, which is "raise" unless the call is
+    inside a triage_unclassifiable() block.
     """
+    if on_unclassifiable is None:
+        on_unclassifiable = _DEFAULT_ON_UNCLASSIFIABLE.get()
+    if on_unclassifiable not in ("raise", "finding"):
+        raise ValueError(
+            f"on_unclassifiable must be 'raise' or 'finding', "
+            f"not {on_unclassifiable!r}"
+        )
     registry = Registry(scopes=list(scopes))
     unclassifiable: list[str] = []
     for path, name, methods, endpoint, dependant in _iter_api_routes(app):
@@ -225,7 +274,12 @@ def from_fastapi(app: FastAPI, scopes: Iterable[Scope]) -> Registry:
             elif route_scopes:
                 registry.add_route(Route(method, path, name, scopes=route_scopes))
             elif has_scheme:
-                unclassifiable.append(f"{method} {path}")
+                if on_unclassifiable == "finding":
+                    registry.add_route(
+                        Route(method, path, name, unclassifiable=True)
+                    )
+                else:
+                    unclassifiable.append(f"{method} {path}")
             else:
                 registry.add_route(Route(method, path, name))
     if unclassifiable:

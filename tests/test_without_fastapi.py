@@ -65,3 +65,15 @@ def test_adapter_import_without_fastapi_says_what_to_install():
     assert result.returncode != 0
     assert "ImportError" in result.stderr
     assert 'pip install "scope-parity[fastapi]"' in result.stderr
+
+
+def test_triage_flag_without_fastapi_exits_tool_failure(tmp_path):
+    (tmp_path / "ordersapp_plain2.py").write_text(REGISTRY_MODULE, encoding="utf-8")
+    result = run_python(
+        "from scope_parity.cli import main\n"
+        "import sys\n"
+        "sys.exit(main(['ordersapp_plain2:registry', '--triage-unclassifiable']))\n",
+        extra_path=str(tmp_path),
+    )
+    assert result.returncode == 2
+    assert "--triage-unclassifiable requires the fastapi extra" in result.stderr

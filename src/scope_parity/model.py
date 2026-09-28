@@ -43,6 +43,9 @@ class Route:
     scopes holds the permission names the route declares; any iterable
     of strings is accepted and stored as a frozenset. public, when set,
     records that the route is deliberately unauthenticated.
+    unclassifiable, when set, records that an adapter found the route
+    protected by a security scheme but could not determine its scopes;
+    check_unclassifiable_routes reports it instead of check_unprotected_routes.
     """
 
     method: str
@@ -50,6 +53,7 @@ class Route:
     handler: str
     scopes: frozenset[str] = frozenset()
     public: Exemption | None = None
+    unclassifiable: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "scopes", frozenset(self.scopes))

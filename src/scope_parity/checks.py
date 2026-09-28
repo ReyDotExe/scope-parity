@@ -6,10 +6,12 @@ from scope_parity.model import Finding, Registry, Severity
 
 __all__ = [
     "EXEMPTION_MISSING_REASON",
+    "ROUTE_UNCLASSIFIABLE",
     "ROUTE_UNKNOWN_SCOPE",
     "ROUTE_UNPROTECTED",
     "SCOPE_UNUSED",
     "check_exemptions",
+    "check_unclassifiable_routes",
     "check_unknown_scopes",
     "check_unprotected_routes",
     "check_unused_scopes",
@@ -20,18 +22,22 @@ ROUTE_UNPROTECTED = "route-unprotected"
 SCOPE_UNUSED = "scope-unused"
 ROUTE_UNKNOWN_SCOPE = "route-unknown-scope"
 EXEMPTION_MISSING_REASON = "exemption-missing-reason"
+ROUTE_UNCLASSIFIABLE = "route-unclassifiable"
 
 
 def check_unprotected_routes(registry: Registry) -> list[Finding]:
     """Report every route that declares no scope and is not marked public.
 
     A route with a public Exemption is skipped here even if the
-    exemption has no reason; check_exemptions reports that case.
+    exemption has no reason; check_exemptions reports that case. A
+    route marked unclassifiable is also skipped: it is protected by a
+    security scheme, so calling it unprotected would be wrong, and
+    check_unclassifiable_routes reports it under its own code.
     Returns a list of ERROR findings, one per unprotected route.
     """
     findings: list[Finding] = []
     for route in registry.routes:
-        if route.scopes or route.public is not None:
+        if route.scopes or route.public is not None or route.unclassifiable:
             continue
         findings.append(
             Finding(
@@ -98,6 +104,35 @@ def check_unknown_scopes(registry: Registry) -> list[Finding]:
     return findings
 
 
+def check_unclassifiable_routes(registry: Registry) -> list[Finding]:
+    """Report every route an adapter marked unclassifiable.
+
+    Such a route is protected by a security scheme, but the adapter
+    could not determine which scopes it requires, so parity cannot be
+    proven for it. Only adapters running in triage mode produce these
+    routes; the default adapter behaviour is to raise instead. Returns
+    a list of ERROR findings, one per unclassifiable route.
+    """
+    findings: list[Finding] = []
+    for route in registry.routes:
+        if not route.unclassifiable:
+            continue
+        findings.append(
+            Finding(
+                code=ROUTE_UNCLASSIFIABLE,
+                severity=Severity.ERROR,
+                subject=route.subject,
+                message=(
+                    f"{route.subject} ({route.handler}) carries a security "
+                    "scheme but the adapter could not determine its scopes; "
+                    "declare them with Security(scheme, scopes=[...]), or "
+                    "mark the endpoint with @declares(...) or @public(...)"
+                ),
+            )
+        )
+    return findings
+
+
 def check_exemptions(registry: Registry) -> list[Finding]:
     """Report every exemption whose reason is empty or whitespace.
 
@@ -135,12 +170,13 @@ def check_exemptions(registry: Registry) -> list[Finding]:
 def run_checks(registry: Registry) -> list[Finding]:
     """Run every check over the registry and return all findings.
 
-    The order is stable: unprotected routes, unknown scopes, unused
-    scopes, then reasonless exemptions. Returns an empty list for a
-    clean registry.
+    The order is stable: unprotected routes, unclassifiable routes,
+    unknown scopes, unused scopes, then reasonless exemptions. Returns
+    an empty list for a clean registry.
     """
     return [
         *check_unprotected_routes(registry),
+        *check_unclassifiable_routes(registry),
         *check_unknown_scopes(registry),
         *check_unused_scopes(registry),
         *check_exemptions(registry),

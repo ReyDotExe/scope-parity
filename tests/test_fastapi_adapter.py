@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, FastAPI, Security
 from fastapi.security import HTTPBearer, OAuth2PasswordBearer
 
 from scope_parity import (
+    ROUTE_UNCLASSIFIABLE,
     ROUTE_UNPROTECTED,
     SCOPE_UNUSED,
     Registry,
@@ -21,6 +22,7 @@ from scope_parity.fastapi import (
     declares,
     from_fastapi,
     public,
+    triage_unclassifiable,
 )
 
 oauth2 = OAuth2PasswordBearer(tokenUrl="token", scopes={})
@@ -188,3 +190,82 @@ def test_docs_routes_are_not_in_the_registry():
     registry = from_fastapi(build_app(), scopes=SCOPES)
     assert not any(r.path.startswith("/docs") for r in registry.routes)
     assert not any(r.path == "/openapi.json" for r in registry.routes)
+
+
+def build_unclassifiable_app() -> FastAPI:
+    """An app with one unclassifiable route and one ordinary one."""
+    app = FastAPI()
+
+    @app.get("/admin", dependencies=[Depends(HTTPBearer())])
+    def admin(): ...
+
+    @app.get("/orders", dependencies=[Security(oauth2, scopes=["orders:read"])])
+    def list_orders(): ...
+
+    return app
+
+
+def test_triage_mode_marks_routes_instead_of_raising():
+    registry = from_fastapi(
+        build_unclassifiable_app(),
+        scopes=[Scope("orders:read", "view orders")],
+        on_unclassifiable="finding",
+    )
+    routes = by_subject(registry)
+    assert routes["GET /admin"].unclassifiable
+    assert routes["GET /admin"].scopes == frozenset()
+    assert routes["GET /admin"].public is None
+    assert not routes["GET /orders"].unclassifiable
+
+
+def test_triage_mode_findings_have_the_right_code_and_severity():
+    registry = from_fastapi(
+        build_unclassifiable_app(),
+        scopes=[Scope("orders:read", "view orders")],
+        on_unclassifiable="finding",
+    )
+    findings = run_checks(registry)
+    assert [(f.code, f.subject) for f in findings] == [
+        (ROUTE_UNCLASSIFIABLE, "GET /admin")
+    ]
+    assert findings[0].severity is Severity.ERROR
+    assert "could not determine its scopes" in findings[0].message
+
+
+def test_raising_is_still_the_default():
+    with pytest.raises(UnclassifiableRouteError):
+        from_fastapi(
+            build_unclassifiable_app(), scopes=[Scope("orders:read", "view orders")]
+        )
+
+
+def test_explicit_raise_still_raises_inside_triage_context():
+    with triage_unclassifiable():
+        with pytest.raises(UnclassifiableRouteError):
+            from_fastapi(
+                build_unclassifiable_app(),
+                scopes=[Scope("orders:read", "view orders")],
+                on_unclassifiable="raise",
+            )
+
+
+def test_triage_context_changes_the_default():
+    with triage_unclassifiable():
+        registry = from_fastapi(
+            build_unclassifiable_app(), scopes=[Scope("orders:read", "view orders")]
+        )
+    assert by_subject(registry)["GET /admin"].unclassifiable
+
+
+def test_triage_context_resets_after_the_block():
+    with triage_unclassifiable():
+        pass
+    with pytest.raises(UnclassifiableRouteError):
+        from_fastapi(
+            build_unclassifiable_app(), scopes=[Scope("orders:read", "view orders")]
+        )
+
+
+def test_invalid_on_unclassifiable_value_is_rejected():
+    with pytest.raises(ValueError):
+        from_fastapi(FastAPI(), scopes=[], on_unclassifiable="ignore")

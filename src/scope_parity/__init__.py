@@ -9,10 +9,12 @@ __version__ = "0.3.0"
 
 from scope_parity.checks import (
     EXEMPTION_MISSING_REASON,
+    ROUTE_UNCLASSIFIABLE,
     ROUTE_UNKNOWN_SCOPE,
     ROUTE_UNPROTECTED,
     SCOPE_UNUSED,
     check_exemptions,
+    check_unclassifiable_routes,
     check_unknown_scopes,
     check_unprotected_routes,
     check_unused_scopes,
@@ -22,6 +24,7 @@ from scope_parity.model import Exemption, Finding, Registry, Route, Scope, Sever
 
 __all__ = [
     "EXEMPTION_MISSING_REASON",
+    "ROUTE_UNCLASSIFIABLE",
     "ROUTE_UNKNOWN_SCOPE",
     "ROUTE_UNPROTECTED",
     "SCOPE_UNUSED",
@@ -33,6 +36,7 @@ __all__ = [
     "Severity",
     "__version__",
     "check_exemptions",
+    "check_unclassifiable_routes",
     "check_unknown_scopes",
     "check_unprotected_routes",
     "check_unused_scopes",

@@ -2,6 +2,7 @@
 
 from scope_parity import (
     EXEMPTION_MISSING_REASON,
+    ROUTE_UNCLASSIFIABLE,
     ROUTE_UNKNOWN_SCOPE,
     ROUTE_UNPROTECTED,
     SCOPE_UNUSED,
@@ -173,3 +174,28 @@ def test_half_applied_rename_is_caught_from_both_sides():
         ROUTE_UNPROTECTED,
         SCOPE_UNUSED,
     ]
+
+
+def test_unclassifiable_route_is_its_own_finding_not_unprotected():
+    reg = clean_registry()
+    reg.add_route(Route("POST", "/invoices/{id}/refund", "refund_invoice", unclassifiable=True))
+    findings = run_checks(reg)
+    assert codes(findings) == [ROUTE_UNCLASSIFIABLE]
+    finding = findings[0]
+    assert finding.severity is Severity.ERROR
+    assert finding.subject == "POST /invoices/{id}/refund"
+    assert "could not determine its scopes" in finding.message
+    assert "Security(scheme, scopes=[...])" in finding.message
+    assert "@declares" in finding.message
+    assert "@public" in finding.message
+
+
+def test_unclassifiable_route_with_scopes_is_still_checked_for_unknown_names():
+    # An adapter never produces this combination, but a hand-written
+    # registry can; the scope checks must not skip such a route.
+    reg = clean_registry()
+    reg.add_route(
+        Route("GET", "/audit", "audit_log", scopes={"audit:read"}, unclassifiable=True)
+    )
+    findings = run_checks(reg)
+    assert sorted(codes(findings)) == [ROUTE_UNCLASSIFIABLE, ROUTE_UNKNOWN_SCOPE]

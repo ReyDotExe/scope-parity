@@ -207,6 +207,7 @@ def test_json_output_contains_every_field_of_every_finding(fixture_dir, capsys):
     assert document["summary"] == {
         "errors": 2,
         "warnings": 1,
+        "unclassifiable": 0,
         "routes": 3,
         "scopes": 2,
     }
@@ -223,3 +224,64 @@ def test_version_exits_zero(capsys):
         main(["--version"])
     assert excinfo.value.code == 0
     assert "scope-parity" in capsys.readouterr().out
+
+
+UNCLASSIFIABLE_APP_MODULE = """\
+from fastapi import Depends, FastAPI
+from fastapi.security import HTTPBearer
+
+from scope_parity import Scope
+from scope_parity.fastapi import from_fastapi
+
+app = FastAPI()
+
+
+@app.get("/admin", dependencies=[Depends(HTTPBearer())])
+def admin(): ...
+
+
+def registry():
+    return from_fastapi(app, scopes=[Scope("orders:read", "view orders")])
+"""
+
+
+def test_unclassifiable_routes_without_the_flag_exit_tool_failure(fixture_dir, capsys):
+    pytest.importorskip("fastapi")
+    name = write_module(fixture_dir, "ordersapp_unclass", UNCLASSIFIABLE_APP_MODULE)
+    assert main([f"{name}:registry"]) == EXIT_TOOL_FAILURE
+    err = capsys.readouterr().err
+    assert "could not classify" in err
+    assert "GET /admin" in err
+
+
+def test_triage_flag_turns_unclassifiable_routes_into_findings(fixture_dir, capsys):
+    pytest.importorskip("fastapi")
+    name = write_module(fixture_dir, "ordersapp_unclass2", UNCLASSIFIABLE_APP_MODULE)
+    assert main([f"{name}:registry", "--triage-unclassifiable"]) == EXIT_FINDINGS
+    out = capsys.readouterr().out
+    assert "route-unclassifiable" in out
+    assert "could not determine its scopes" in out
+    # the unused orders:read scope is also reported: triage produces a
+    # full report, not only the unclassifiable routes
+    assert "scope-unused" in out
+    assert "1 unclassifiable" in out
+
+
+def test_triage_flag_on_a_clean_registry_says_zero_unclassifiable(fixture_dir, capsys):
+    pytest.importorskip("fastapi")
+    name = write_module(fixture_dir, "ordersapp_clean_triage", CLEAN_MODULE)
+    assert main([f"{name}:registry", "--triage-unclassifiable"]) == EXIT_CLEAN
+    out = capsys.readouterr().out
+    assert "no findings, 0 unclassifiable" in out
+
+
+def test_triage_json_summary_counts_unclassifiable(fixture_dir, capsys):
+    pytest.importorskip("fastapi")
+    name = write_module(fixture_dir, "ordersapp_unclass3", UNCLASSIFIABLE_APP_MODULE)
+    assert (
+        main([f"{name}:registry", "--triage-unclassifiable", "--format", "json"])
+        == EXIT_FINDINGS
+    )
+    document = json.loads(capsys.readouterr().out)
+    assert document["summary"]["unclassifiable"] == 1
+    assert any(f["code"] == "route-unclassifiable" for f in document["findings"])
