@@ -1,5 +1,7 @@
 # scope-parity
 
+[![ci](https://github.com/ReyDotExe/scope-parity/actions/workflows/ci.yml/badge.svg)](https://github.com/ReyDotExe/scope-parity/actions/workflows/ci.yml)
+
 parity checks between a route registry and a permission registry.
 
 the most common authorization defect is not a bypassed check. it is a
@@ -34,6 +36,12 @@ python 3.11 or newer. no runtime dependencies.
   may now be declaring nothing.
 - exemption-missing-reason (error): a route was marked public, or a
   scope routeless, without a reason.
+- route-unclassifiable (error): an adapter found the route protected
+  by a security scheme but could not determine which scopes it
+  requires. only produced in triage mode; the default adapter
+  behaviour is to refuse the whole run instead. an error, not a
+  warning, because the route is unaccounted for and parity cannot be
+  proven while it stays that way.
 
 scope names match exactly. ":" is a naming convention, not a
 hierarchy. a route declaring "orders" does not satisfy "orders:read",
@@ -116,6 +124,9 @@ the flags:
 - --format {human,json}: json prints one document with every finding
   (code, severity, subject, message) and the summary counts, for CI
   to consume.
+- --triage-unclassifiable: report routes the fastapi adapter cannot
+  classify as findings instead of refusing the run. see triage mode
+  below. requires the fastapi extra.
 - --version.
 
 the exit codes:
@@ -186,6 +197,100 @@ distinction the empty-registry exit code draws.
 routes that are not fastapi api routes, such as the documentation
 routes and starlette mounts, are outside the adapter and skipped.
 
+### triage mode
+
+raising is right for a pipeline and wrong for adoption. pointing the
+tool at an existing app with two hundred routes and thirty
+unclassifiable ones yields one exception and no report on the other
+hundred and seventy, which makes incremental fixing impossible.
+triage mode turns each unclassifiable route into a
+route-unclassifiable error instead, so the run produces the full
+report and the count shrinks as routes get fixed:
+
+```
+scope-parity myapp.parity:registry --triage-unclassifiable
+```
+
+from a library or a parity module, the same choice is the
+on_unclassifiable argument:
+
+```python
+registry = from_fastapi(app, scopes=scopes, on_unclassifiable="finding")
+```
+
+the escape hatch is deliberately loud. every unclassifiable route is
+a printed error, the findings are errors and fail the run under the
+default --fail-on, and the summary line carries the count whenever
+the mode is on, zero included:
+
+```
+7 routes and 3 scopes checked: 2 errors, 1 warning, 2 unclassifiable
+```
+
+unclassifiable findings are errors, so they are inside the error
+count as well as counted on their own. the json summary always has
+the unclassifiable field. what triage mode changes is exit 2 with no
+report into exit 1 with a full report; it never turns unclassifiable
+routes into a pass.
+
+### supported fastapi versions
+
+the adapter reads fastapi internals, and fastapi 0.141 rewrote them:
+included routers stay nested in app.routes and the dependant grew a
+different scope layout. the supported range is 0.100 to 0.141, and
+the dependency specifier says fastapi>=0.100,<0.142 because a range
+this project has not tested is not a range it claims. ci runs the
+suite against both sides of the refactor and the boundaries of the
+range; the upper bound moves when a new version joins the matrix and
+passes.
+
+## the pytest plugin
+
+a separate CI step is easy to forget to add. the plugin runs the
+check inside the test suite that already runs, as one extra collected
+test named scope-parity. install the extra:
+
+```
+pip install -e ".[pytest]"
+```
+
+installing changes nothing by itself. the plugin collects its test
+only when pyproject.toml asks for it:
+
+```toml
+[tool.scope-parity]
+target = "myapp.parity:registry"
+pytest = true
+```
+
+target is the same key the CLI reads, but target alone stays
+CLI-only; pytest = true is the explicit opt-in. the policy is the
+CLI's, not a second one: fail_on may be set in the same table with
+the same values and the same default, findings that meet it fail the
+test with a report naming each one, and a run that could not be
+performed, a broken target or an empty registry, fails the test the
+way the CLI would exit 2.
+
+```
+FAILED scope-parity - Failed: scope-parity found:
+error    route-unprotected  DELETE /orders/{id} (delete_order) declares no scope ...
+```
+
+suites that build the registry themselves, for example around a
+fastapi app fixture, can use the assertion helper instead of the
+collected test:
+
+```python
+from scope_parity.pytest_plugin import assert_parity
+
+def test_scope_parity(app):
+    assert_parity(from_fastapi(app, scopes=SCOPES))
+```
+
+assert_parity fails the test the same way and returns the findings
+list when it passes, so non-failing warnings can still be asserted
+on.
+
 ## trust boundary
 
 scope-parity imports your application to read its routes, so it runs
@@ -194,11 +299,13 @@ suite. it is not a scanner for untrusted input.
 
 ## status
 
-this is stage 3: the data model, the checks, the CLI, and a fastapi
-adapter. the pytest plugin and canned CI config are still not built.
-the core imports nothing outside the standard library; fastapi is an
-optional extra used only by the adapter. pytest and fastapi are the
-test dependencies.
+this is stage 4: the data model, the checks, the CLI, the fastapi
+adapter with triage mode, the pytest plugin, and CI that tests
+python 3.11 to 3.13, the supported fastapi range, and the tool
+against its own demo registry in examples/. stage 5, docs and
+publishing to pypi, is not built. the core imports nothing outside
+the standard library; fastapi and pytest are optional extras, one
+for the adapter and one for the plugin.
 
 ## license
 
