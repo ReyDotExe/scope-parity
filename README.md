@@ -13,16 +13,21 @@ instead of a human noticing.
 
 ## install
 
-not on pypi yet. clone the repository and install it into your
-environment:
-
 ```
-git clone https://github.com/ReyDotExe/scope-parity.git
-cd scope-parity
-pip install -e .
+pip install scope-parity
 ```
 
-python 3.11 or newer. no runtime dependencies.
+python 3.11 or newer. no runtime dependencies. the fastapi adapter
+and the pytest plugin are extras, installed only when wanted:
+
+```
+pip install "scope-parity[fastapi]"
+pip install "scope-parity[pytest]"
+```
+
+changes are recorded in [CHANGELOG.md](CHANGELOG.md). how to report
+a vulnerability, and what counts as one, is in
+[SECURITY.md](SECURITY.md).
 
 ## the checks
 
@@ -153,7 +158,7 @@ and route-unknown-scope with nothing to catch.
 install the extra:
 
 ```
-pip install -e ".[fastapi]"
+pip install "scope-parity[fastapi]"
 ```
 
 write a small module that builds the registry from your app, and
@@ -233,6 +238,15 @@ the unclassifiable field. what triage mode changes is exit 2 with no
 report into exit 1 with a full report; it never turns unclassifiable
 routes into a pass.
 
+one scoping rule to know: --triage-unclassifiable only affects
+from_fastapi calls that did not pass on_unclassifiable themselves.
+the flag sets the default the adapter falls back on while your
+module imports; a call that names its own on_unclassifiable has
+nothing to fall back on, so the flag does not touch it. this is
+deliberate. a command-line flag that silently overrode an explicit
+argument written in your own code would be surprising, and the
+explicit argument is the stronger statement of intent.
+
 ### supported fastapi versions
 
 the adapter reads fastapi internals, and fastapi 0.141 rewrote them:
@@ -251,7 +265,7 @@ check inside the test suite that already runs, as one extra collected
 test named scope-parity. install the extra:
 
 ```
-pip install -e ".[pytest]"
+pip install "scope-parity[pytest]"
 ```
 
 installing changes nothing by itself. the plugin collects its test
@@ -299,13 +313,15 @@ suite. it is not a scanner for untrusted input.
 
 ## status
 
-this is stage 4: the data model, the checks, the CLI, the fastapi
-adapter with triage mode, the pytest plugin, and CI that tests
-python 3.11 to 3.13, the supported fastapi range, and the tool
-against its own demo registry in examples/. stage 5, docs and
-publishing to pypi, is not built. the core imports nothing outside
-the standard library; fastapi and pytest are optional extras, one
-for the adapter and one for the plugin.
+released: 1.0.0 on pypi, all five planned stages built. the data
+model, the checks, the CLI, the fastapi adapter with triage mode,
+the pytest plugin, and CI that tests python 3.11 to 3.13, the
+supported fastapi range, and the tool against its own demo registry
+in examples/. releases are published from a tag by CI via trusted
+publishing, and a weekly job tests the newest fastapi against the
+version cap so the cap moves when it can. the core imports nothing
+outside the standard library; fastapi and pytest are optional
+extras, one for the adapter and one for the plugin.
 
 ## license
 
