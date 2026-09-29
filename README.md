@@ -1,6 +1,6 @@
 # scope-parity
 
-[![ci](https://github.com/ReyDotExe/scope-parity/actions/workflows/ci.yml/badge.svg)](https://github.com/ReyDotExe/scope-parity/actions/workflows/ci.yml)
+[![ci](https://github.com/ReyDotExe/scope-parity/actions/workflows/ci.yml/badge.svg)](https://github.com/ReyDotExe/scope-parity/actions/workflows/ci.yml) [![PyPI](https://img.shields.io/pypi/v/scope-parity)](https://pypi.org/project/scope-parity/)
 
 parity checks between a route registry and a permission registry.
 
@@ -10,6 +10,11 @@ hurry, the decorator forgotten, and nothing errors because a missing
 check looks exactly like working code. scope-parity takes the list of
 routes and the list of scopes and reports the mismatches, so CI fails
 instead of a human noticing.
+
+this came out of a private discord bot's admin panel, where the same
+check runs over a few dozen admin routes. the security work in that
+system is written up in
+[reybot-security-notes](https://github.com/ReyDotExe/reybot-security-notes).
 
 ## install
 
