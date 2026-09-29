@@ -17,6 +17,12 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 
+[project.urls]
+Repository = "https://github.com/ReyDotExe/scope-parity"
+Changelog = "https://github.com/ReyDotExe/scope-parity/blob/main/CHANGELOG.md"
+Security = "https://github.com/ReyDotExe/scope-parity/blob/main/SECURITY.md"
+Issues = "https://github.com/ReyDotExe/scope-parity/issues"
+
 [project.optional-dependencies]
 # The adapter reads FastAPI internals, so the upper bound is the last
 # version the CI matrix has passed against; raise it only together

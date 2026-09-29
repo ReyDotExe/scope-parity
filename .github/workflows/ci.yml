@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release workflow calls this one so that publishing a tag
+  # re-runs the full suite, the FastAPI matrix, and the self-check on
+  # the tagged commit before anything is uploaded.
+  workflow_call:
 
 jobs:
   tests:
