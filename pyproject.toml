@@ -26,7 +26,11 @@ Issues = "https://github.com/ReyDotExe/scope-parity/issues"
 [project.optional-dependencies]
 # The adapter reads FastAPI internals, so the upper bound is the last
 # version the CI matrix has passed against; raise it only together
-# with the matrix and the README.
+# with the matrix and the README. The weekly fastapi-latest workflow
+# installs the newest release regardless of this cap, runs the suite,
+# and opens an issue with the result: a pass means the cap can be
+# widened and the version added to the matrix, a failure means the
+# adapter needs work first and the cap is doing its job.
 fastapi = ["fastapi>=0.100,<0.142"]
 pytest = ["pytest>=8"]
 test = ["pytest>=8", "fastapi>=0.100,<0.142"]

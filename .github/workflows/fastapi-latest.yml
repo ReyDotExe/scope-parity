@@ -1,0 +1,98 @@
+name: fastapi-latest
+
+# The fastapi cap in pyproject.toml is correct the day it is written
+# and stale a release later. This weekly job installs the newest
+# FastAPI regardless of the cap, runs the full suite against it, and
+# reports by opening an issue: a pass means the cap can be widened
+# and the version added to the matrix, a failure means the adapter
+# needs work and the cap is doing its job. It is deliberately not
+# part of the normal build and cannot fail it; the test step is
+# continue-on-error, so the workflow's only output is the issue.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  newest:
+    name: newest fastapi vs the cap
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install with the newest FastAPI, ignoring the cap
+        # The fastapi extra is not requested, so pip resolves fastapi
+        # with no upper bound and installs the newest release.
+        run: |
+          python -m pip install -e . pytest packaging
+          python -m pip install --upgrade fastapi
+      - name: Compare the installed version against the cap
+        id: cap
+        run: |
+          python - <<'EOF' >> "$GITHUB_OUTPUT"
+          import tomllib
+          from importlib.metadata import version
+          from packaging.requirements import Requirement
+
+          with open("pyproject.toml", "rb") as fh:
+              data = tomllib.load(fh)
+          requirement = next(
+              Requirement(entry)
+              for entry in data["project"]["optional-dependencies"]["fastapi"]
+              if Requirement(entry).name == "fastapi"
+          )
+          installed = version("fastapi")
+          inside = requirement.specifier.contains(installed)
+          print(f"version={installed}")
+          print(f"inside={str(inside).lower()}")
+          EOF
+      - name: Run the test suite against it
+        id: tests
+        continue-on-error: true
+        run: python -m pytest
+      - name: Report by issue when the newest version is outside the cap
+        if: steps.cap.outputs.inside == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.cap.outputs.version }}
+          OUTCOME: ${{ steps.tests.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create fastapi-cap \
+            --description "opened by the weekly newest-fastapi check" \
+            --color d4c5f9 --force
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --label fastapi-cap --search "\"fastapi $VERSION\" in:title" \
+            --json number --jq length)
+          if [ "$existing" -gt 0 ]; then
+            echo "an open issue already exists for fastapi $VERSION; not opening another"
+            exit 0
+          fi
+          if [ "$OUTCOME" = "success" ]; then
+            title="fastapi $VERSION: passes outside the cap, widen it"
+            {
+              echo "the weekly check installed fastapi $VERSION, which the cap in pyproject.toml excludes, and the full test suite passed against it."
+              echo
+              echo "the cap can be widened: add $VERSION to the fastapi matrix in ci.yml, confirm it passes there, then raise the upper bound in pyproject.toml and the supported range in README.md together."
+              echo
+              echo "run: $RUN_URL"
+            } > body.md
+          else
+            title="fastapi $VERSION: fails outside the cap, adapter needs work"
+            {
+              echo "the weekly check installed fastapi $VERSION, which the cap in pyproject.toml excludes, and the test suite failed against it."
+              echo
+              echo "the adapter needs work before the cap can move; until then the cap is doing its job. the failing run has the details."
+              echo
+              echo "run: $RUN_URL"
+            } > body.md
+          fi
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "$title" --label fastapi-cap --body-file body.md
